@@ -65,13 +65,14 @@ class ChestXrayDataset(Dataset):
         data_root/CXR_png/CHNCXR_0001_0.png (grayscale X-ray images)
         data_root/masks/CHNCXR_0001_0_mask.png (binary masks)
     """
-    def __init__(self, data_root, split='train', transform=None, train_ratio=0.8):
+    def __init__(self, data_root, split='train', transform=None, train_ratio=0.7, val_ratio=0.15):
         """
         Args:
             data_root: Root directory containing CXR_png and masks subdirectories
-            split: 'train' or 'val'
+            split: 'train', 'val', or 'test'
             transform: Optional transform to be applied on a sample
-            train_ratio: Ratio of training data (default 0.8)
+            train_ratio: Ratio of training data (default 0.7)
+            val_ratio:   Ratio of validation data (default 0.15); test = remainder
         """
         self.data_root = data_root
         self.transform = transform
@@ -83,28 +84,32 @@ class ChestXrayDataset(Dataset):
 
         # Find all images and their corresponding masks
         image_files = sorted(glob(os.path.join(image_dir, '*.png')))
-        self.samples = []
+        all_samples = []
 
         for img_path in image_files:
-            # Get corresponding mask path
             img_name = os.path.basename(img_path)
-            mask_name = img_name.replace('.png', '_mask.png')
-            mask_path = os.path.join(mask_dir, mask_name)
+            # Try both naming conventions:
+            #   CHNCXR → CHNCXR_XXXX_0_mask.png  (Shenzhen)
+            #   MCUCXR → MCUCXR_XXXX_0.png        (Montgomery, same name as image)
+            for mask_name in [img_name.replace('.png', '_mask.png'), img_name]:
+                mask_path = os.path.join(mask_dir, mask_name)
+                if os.path.exists(mask_path):
+                    all_samples.append((img_path, mask_path))
+                    break
 
-            # Only add if mask exists
-            if os.path.exists(mask_path):
-                self.samples.append((img_path, mask_path))
-
-        # Split into train/val
-        num_samples = len(self.samples)
-        num_train = int(num_samples * train_ratio)
+        # 70 / 15 / 15 split
+        n = len(all_samples)
+        n_train = int(n * train_ratio)
+        n_val   = int(n * val_ratio)
 
         if split == 'train':
-            self.samples = self.samples[:num_train]
+            self.samples = all_samples[:n_train]
         elif split == 'val':
-            self.samples = self.samples[num_train:]
+            self.samples = all_samples[n_train:n_train + n_val]
+        elif split == 'test':
+            self.samples = all_samples[n_train + n_val:]
         else:
-            raise ValueError(f"Invalid split: {split}. Must be 'train' or 'val'.")
+            raise ValueError(f"Invalid split: {split}. Must be 'train', 'val', or 'test'.")
 
         print(f"Loaded {len(self.samples)} {split} samples from {data_root}")
 
